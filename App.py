@@ -3,44 +3,55 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# Configuração da página
-st.set_page_config(page_title="Tabela Sr. Jean", layout="wide")
+# 1. Configuração da página (deve ser a primeira linha)
+st.set_page_config(page_title="Tabela de Cartas - Sr. Jean", layout="wide")
 
-# Pegar a data atual para o título e nome do arquivo
-data_hoje = datetime.now().strftime('%d/%m/%Y')
-data_arquivo = datetime.now().strftime('%d_%m_%Y')
+# 2. Saudação personalizada conforme solicitado
+st.markdown(f"## ☕ Bom dia, Sr. Jean, tudo bem? - Tabela atualizada do dia!")
 
-# Cabeçalho personalizado
-st.title(f"☕ Bom dia, Sr. Jean, tudo bem?")
-st.subheader(f"Tabela atualizada do dia {data_hoje}!")
+# 3. Definição de nomes e datas
+data_atual = datetime.now()
+data_formatada = data_atual.strftime('%d/%m/%Y')
+nome_arquivo_download = data_atual.strftime('TABELA_%d_%m_%Y.xlsx')
 
-arquivo_pronto = "tabela_do_dia.xlsx"
+# Caminho do arquivo gerado pelo robô
+CAMINHO_ARQUIVO = "tabela_do_dia.xlsx"
 
-# Verifica se o arquivo existe
-if os.path.exists(arquivo_pronto):
+# 4. Lógica de exibição da tabela
+if os.path.exists(CAMINHO_ARQUIVO):
     try:
-        # Carrega os dados
-        df_final = pd.read_excel(arquivo_pronto)
+        # Forçamos o pandas a ler o arquivo sem usar cache do Streamlit
+        df = pd.read_excel(CAMINHO_ARQUIVO, engine='openpyxl')
         
-        # Garante que a tabela apareça na tela com largura total
-        st.write("### Confira as oportunidades de hoje:")
-        st.dataframe(df_final, use_container_width=True, height=600)
-        
-        # Espaço extra
-        st.markdown("---")
-        
-        # Botão de Download com nome dinâmico (TABELA_DD_MM_AAAA.xlsx)
-        with open(arquivo_pronto, "rb") as file:
-            st.download_button(
-                label=f"📥 BAIXAR TABELA ({data_hoje})",
-                data=file,
-                file_name=f"TABELA_{data_arquivo}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        if not df.empty:
+            st.write(f"Exibindo dados atualizados em: **{data_formatada}**")
+            
+            # Exibe a tabela com altura ajustada para não sumir
+            st.dataframe(
+                df, 
+                use_container_width=True, 
+                height=500
             )
             
+            st.markdown("---")
+            
+            # 5. Botão de Download com o nome solicitado: TABELA_DATA.xlsx
+            with open(CAMINHO_ARQUIVO, "rb") as file:
+                st.download_button(
+                    label="📥 BAIXAR TABELA PARA EXCEL",
+                    data=file,
+                    file_name=nome_arquivo_download,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+        else:
+            st.warning("Sr. Jean, o arquivo foi encontrado, mas parece estar vazio. Por favor, verifique o robô.")
+            
     except Exception as e:
-        st.error(f"Sr. Jean, houve um erro ao ler os dados: {e}")
+        st.error(f"Erro técnico ao carregar a tabela: {e}")
 else:
-    # Caso o robô ainda não tenha rodado ou o arquivo não esteja na pasta
-    st.warning(f"Sr. Jean, a tabela do dia {data_hoje} ainda não foi gerada. Por favor, verifique se o robô rodou às 08h.")
-    st.info("Se você acabou de configurar, vá no GitHub e aperte 'Run Workflow' para gerar a primeira tabela.")
+    # Se o arquivo não existe, mostramos o erro de forma clara
+    st.error(f"❌ Sr. Jean, o arquivo '{CAMINHO_ARQUIVO}' não foi encontrado no servidor.")
+    st.info("Aguarde o robô rodar às 08h ou execute-o manualmente no GitHub Actions.")
+
+# Rodapé simples
+st.caption(f"Sistema de Monitoramento Automático - Atualizado em {data_formatada}")
