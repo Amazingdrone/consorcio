@@ -3,78 +3,73 @@ import requests
 import pandas as pd
 import numpy as np
 
-# Pasta onde o arquivo será salvo
-PASTA_ATUAL = os.path.abspath(os.path.dirname(__file__))
+PASTA = os.path.abspath(os.path.dirname(__file__))
 
 def clean_currency(x):
     if pd.isna(x): return np.nan
-    if isinstance(x, (int, float)): return float(x)
     x = str(x).replace('R$', '').replace('%', '').strip().replace('.', '').replace(',', '.')
     try: return float(x)
     except: return np.nan
 
-def processar_e_salvar(caminho_input):
-    print("Processando os dados matemáticos...")
-    # Tenta ler o CSV que o site envia
-    try:
-        df = pd.read_csv(caminho_input, sep=';', encoding='latin1')
-    except:
-        df = pd.read_csv(caminho_input, sep=';', encoding='utf-8')
-
-    if 'Codigo' in df.columns: df = df.rename(columns={'Codigo': 'Código'})
-
-    # Cálculos
-    df['Crédito Num'] = df['Credito R$'].apply(clean_currency)
-    df['Entrada Num'] = df['Entrada R$'].apply(clean_currency)
-    df['Parcelas Num'] = pd.to_numeric(df['Parcelas'], errors='coerce')
-    df['Valor Parcela Num'] = df['Valor das Parcelas'].apply(clean_currency)
+def executar():
+    url = "https://cartascontempladas.com.br/wp-admin/admin-ajax.php?action=gerar_csv_cartas"
     
-    df['Total das parcelas'] = df['Parcelas Num'] * df['Valor Parcela Num']
-    df['Custo Total'] = df['Total das parcelas'] + df['Entrada Num']
-    df['% Entrada'] = (df['Entrada Num'] / df['Crédito Num']) * 100
-    df['% Total'] = ((df['Custo Total'] - df['Crédito Num']) / df['Crédito Num']) * 100
-
-    # Montagem da tabela final
-    df_final = pd.DataFrame()
-    df_final['Código'] = df['Código']
-    df_final['Segmento'] = df['Segmento'].astype(str).str.replace('Veiculos', 'Veículos')
-    df_final['Administradora'] = df['Administradora']
-    df_final['Crédito R$'] = df['Crédito Num'].apply(lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    df_final['Entrada R$'] = df['Entrada Num'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    df_final['% Entrada'] = df['% Entrada'].apply(lambda x: f"{x:,.2f}%".replace(".", ","))
-    df_final['Parcelas'] = df['Parcelas Num'].fillna(0).astype(int)
-    df_final['Valor das Parcelas'] = df['Valor Parcela Num'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    df_final['Total das parcelas'] = df['Total das parcelas'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    df_final['Custo Total'] = df['Custo Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    df_final['% Total'] = df['% Total'].apply(lambda x: f"{x:,.2f}%".replace(".", ","))
-
-    caminho_saida = os.path.join(PASTA_ATUAL, "tabela_do_dia.xlsx")
-    df_final.to_excel(caminho_saida, index=False)
-    print(f"Arquivo final gerado com sucesso: {caminho_saida}")
-
-def executar_robot():
-    # URL direta do download que o botão aciona
-    url_download = "https://cartascontempladas.com.br/wp-admin/admin-ajax.php?action=gerar_csv_cartas"
-    
-    # Fingindo ser um navegador real para o site não bloquear
+    # DISFARCE COMPLETO: Imita um navegador Chrome real acessando o site
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Referer": "https://cartascontempladas.com.br/ver-todas-as-cartas-contempladas/",
+        "X-Requested-With": "XMLHttpRequest"
     }
 
-    print("Solicitando arquivo diretamente ao servidor...")
-    resposta = requests.get(url_download, headers=headers)
+    print("Buscando dados no servidor do site...")
+    res = requests.get(url, headers=headers)
 
-    if resposta.status_code == 200:
-        caminho_temp = os.path.join(PASTA_ATUAL, "temp_data.csv")
-        with open(caminho_temp, 'wb') as f:
-            f.write(resposta.content)
+    if res.status_code == 200 and len(res.content) > 100:
+        temp = os.path.join(PASTA, "temp.csv")
+        with open(temp, 'wb') as f:
+            f.write(res.content)
         
-        processar_e_salvar(caminho_temp)
-        os.remove(caminho_temp)
+        # Processamento
+        try:
+            df = pd.read_csv(temp, sep=';', encoding='latin1')
+        except:
+            df = pd.read_csv(temp, sep=';', encoding='utf-8')
+
+        if 'Codigo' in df.columns: df = df.rename(columns={'Codigo': 'Código'})
+
+        # Matemática das Colunas
+        df['c'] = df['Credito R$'].apply(clean_currency)
+        df['e'] = df['Entrada R$'].apply(clean_currency)
+        df['p'] = pd.to_numeric(df['Parcelas'], errors='coerce')
+        df['v'] = df['Valor das Parcelas'].apply(clean_currency)
+        
+        df['Total das parcelas'] = df['p'] * df['v']
+        df['Custo Total'] = df['Total das parcelas'] + df['e']
+        df['% Entrada'] = (df['e'] / df['c']) * 100
+        df['% Total'] = ((df['Custo Total'] - df['c']) / df['c']) * 100
+
+        # Montagem Final
+        f = pd.DataFrame()
+        f['Código'] = df['Código']
+        f['Segmento'] = df['Segmento'].astype(str).str.replace('Veiculos', 'Veículos')
+        f['Administradora'] = df['Administradora']
+        f['Crédito R$'] = df['c'].apply(lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        f['Entrada R$'] = df['e'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        f['% Entrada'] = df['% Entrada'].apply(lambda x: f"{x:,.2f}%".replace(".", ","))
+        f['Parcelas'] = df['p'].fillna(0).astype(int)
+        f['Valor das Parcelas'] = df['v'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        f['Total das parcelas'] = df['Total das parcelas'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        f['Custo Total'] = df['Custo Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        f['% Total'] = df['% Total'].apply(lambda x: f"{x:,.2f}%".replace(".", ","))
+
+        f.to_excel(os.path.join(PASTA, "tabela_do_dia.xlsx"), index=False)
+        print("Tabela gerada com sucesso!")
+        os.remove(temp)
     else:
-        print(f"Erro ao baixar: Status {resposta.status_code}")
-        # Cria um arquivo vazio para o Git não dar erro caso o download falhe
-        pd.DataFrame().to_excel(os.path.join(PASTA_ATUAL, "tabela_do_dia.xlsx"))
+        print("ERRO: O site negou o acesso ou enviou arquivo vazio.")
+        # Se falhar, NÃO cria o excel para o GitHub acusar erro e a gente saber
+        if os.path.exists(os.path.join(PASTA, "tabela_do_dia.xlsx")):
+            os.remove(os.path.join(PASTA, "tabela_do_dia.xlsx"))
 
 if __name__ == "__main__":
-    executar_robot()
+    executar()
