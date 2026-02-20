@@ -1,54 +1,40 @@
-import time
 import os
-import glob
+import requests
 import pandas as pd
 import numpy as np
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 
-# Pasta onde o arquivo será salvo no servidor do GitHub
+# Pasta onde o arquivo será salvo
 PASTA_ATUAL = os.path.abspath(os.path.dirname(__file__))
 
 def clean_currency(x):
-    """Limpa strings financeiras para converter em números calculáveis"""
     if pd.isna(x): return np.nan
     if isinstance(x, (int, float)): return float(x)
     x = str(x).replace('R$', '').replace('%', '').strip().replace('.', '').replace(',', '.')
     try: return float(x)
     except: return np.nan
 
-def processar_tabela(caminho_arquivo):
-    """Realiza os cálculos da tabela 'Como Vem' para 'Como Tem Que Ficar'"""
-    print(f"Lendo arquivo para processamento: {caminho_arquivo}")
+def processar_e_salvar(caminho_input):
+    print("Processando os dados matemáticos...")
+    # Tenta ler o CSV que o site envia
     try:
-        # Tenta ler com diferentes encodings caso o CSV venha com acentos do Windows
-        try:
-            df = pd.read_csv(caminho_arquivo, sep=';', encoding='latin1')
-        except:
-            df = pd.read_csv(caminho_arquivo, sep=';', encoding='utf-8')
+        df = pd.read_csv(caminho_input, sep=';', encoding='latin1')
     except:
-        df = pd.read_excel(caminho_arquivo)
-        
-    if 'Codigo' in df.columns:
-        df = df.rename(columns={'Codigo': 'Código'})
-        
-    # Conversão para números
+        df = pd.read_csv(caminho_input, sep=';', encoding='utf-8')
+
+    if 'Codigo' in df.columns: df = df.rename(columns={'Codigo': 'Código'})
+
+    # Cálculos
     df['Crédito Num'] = df['Credito R$'].apply(clean_currency)
     df['Entrada Num'] = df['Entrada R$'].apply(clean_currency)
     df['Parcelas Num'] = pd.to_numeric(df['Parcelas'], errors='coerce')
     df['Valor Parcela Num'] = df['Valor das Parcelas'].apply(clean_currency)
     
-    # Fórmulas de negócio
     df['Total das parcelas'] = df['Parcelas Num'] * df['Valor Parcela Num']
     df['Custo Total'] = df['Total das parcelas'] + df['Entrada Num']
     df['% Entrada'] = (df['Entrada Num'] / df['Crédito Num']) * 100
     df['% Total'] = ((df['Custo Total'] - df['Crédito Num']) / df['Crédito Num']) * 100
 
-    # Formatação final (Padrão Brasileiro)
+    # Montagem da tabela final
     df_final = pd.DataFrame()
     df_final['Código'] = df['Código']
     df_final['Segmento'] = df['Segmento'].astype(str).str.replace('Veiculos', 'Veículos')
@@ -62,76 +48,33 @@ def processar_tabela(caminho_arquivo):
     df_final['Custo Total'] = df['Custo Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
     df_final['% Total'] = df['% Total'].apply(lambda x: f"{x:,.2f}%".replace(".", ","))
 
-    caminho_final = os.path.join(PASTA_ATUAL, "tabela_do_dia.xlsx")
-    df_final.to_excel(caminho_final, index=False)
-    print(f"Sucesso! 'tabela_do_dia.xlsx' gerada.")
+    caminho_saida = os.path.join(PASTA_ATUAL, "tabela_do_dia.xlsx")
+    df_final.to_excel(caminho_saida, index=False)
+    print(f"Arquivo final gerado com sucesso: {caminho_saida}")
 
-def baixar_planilha():
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--window-size=1920,1080') # Garante que o botão não fique escondido
+def executar_robot():
+    # URL direta do download que o botão aciona
+    url_download = "https://cartascontempladas.com.br/wp-admin/admin-ajax.php?action=gerar_csv_cartas"
     
-    prefs = {"download.default_directory": PASTA_ATUAL, "download.prompt_for_download": False}
-    options.add_experimental_option("prefs", prefs)
-    
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    
-    try:
-        driver.get("https://cartascontempladas.com.br/ver-todas-as-cartas-contempladas/")
-        wait = WebDriverWait(driver, 30)
-        
-        # 1. Tenta remover o banner de cookies via JavaScript para limpar o caminho
-        try:
-            driver.execute_script("""
-                var cookies = document.querySelectorAll('[class*="cc-"], [id*="cookie"], [class*="cookie"]');
-                for (var i=0; i < cookies.length; i++) { cookies[i].remove(); }
-            """)
-            print("Tentativa de remover banners de cookies realizada.")
-        except:
-            pass
+    # Fingindo ser um navegador real para o site não bloquear
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
 
-        # 2. Localiza o botão usando o seu XPath
-        xpath_do_botao = '//*[@id="preTabelaCartas"]/div/div[2]/div[1]/a'
-        botao = wait.until(EC.presence_of_element_located((By.XPATH, xpath_do_botao)))
-        
-        # 3. Rola a tela até o botão
-        driver.execute_script("arguments[0].scrollIntoView(true);", botao)
-        time.sleep(2)
+    print("Solicitando arquivo diretamente ao servidor...")
+    resposta = requests.get(url_download, headers=headers)
 
-        # 4. Clique forçado via JavaScript (o mais potente)
-        driver.execute_script("arguments[0].click();", botao)
-        print("Clique forçado executado.")
+    if resposta.status_code == 200:
+        caminho_temp = os.path.join(PASTA_ATUAL, "temp_data.csv")
+        with open(caminho_temp, 'wb') as f:
+            f.write(resposta.content)
         
-        # 5. Espera o download
-        time.sleep(20)
-        
-        arquivos = glob.glob(os.path.join(PASTA_ATUAL, '*.*'))
-        planilhas = [f for f in arquivos if 'tabela_do_dia' not in f and (f.endswith('.csv') or f.endswith('.xlsx'))]
-        
-        if planilhas:
-            arquivo_recente = max(planilhas, key=os.path.getctime)
-            processar_tabela(arquivo_recente)
-            os.remove(arquivo_recente)
-        else:
-            # Caso o clique no link não tenha funcionado, tenta clicar na imagem interna
-            print("Tentando clique alternativo na imagem...")
-            img_botao = driver.find_element(By.XPATH, '//*[@id="preTabelaCartas"]/div/div[2]/div[1]/a/figure/img')
-            driver.execute_script("arguments[0].click();", img_botao)
-            time.sleep(20)
-            # Re-checa arquivos
-            arquivos = glob.glob(os.path.join(PASTA_ATUAL, '*.*'))
-            planilhas = [f for f in arquivos if 'tabela_do_dia' not in f and (f.endswith('.csv') or f.endswith('.xlsx'))]
-            if planilhas:
-                arquivo_recente = max(planilhas, key=os.path.getctime)
-                processar_tabela(arquivo_recente)
-                os.remove(arquivo_recente)
-            else:
-                print("Erro: Planilha não encontrada.")
-            
-    finally:
-        driver.quit()
+        processar_e_salvar(caminho_temp)
+        os.remove(caminho_temp)
+    else:
+        print(f"Erro ao baixar: Status {resposta.status_code}")
+        # Cria um arquivo vazio para o Git não dar erro caso o download falhe
+        pd.DataFrame().to_excel(os.path.join(PASTA_ATUAL, "tabela_do_dia.xlsx"))
 
 if __name__ == "__main__":
-    baixar_planilha()
+    executar_robot()
